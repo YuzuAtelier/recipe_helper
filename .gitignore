@@ -1,0 +1,12 @@
+# ローカル開発用(公開不要)
+.claude/
+node_modules/
+
+# 一時ファイル
+scratch_*.js
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

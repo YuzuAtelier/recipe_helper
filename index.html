@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>レシピヘルパー</title>
+<meta name="description" content="食材を3〜5つ選ぶと、一致度の高いレシピをおすすめする個人用アプリ">
+<meta name="theme-color" content="#f97316">
+<link rel="manifest" href="./manifest.json">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+  :root {
+    --primary: #f97316;
+    --primary-dark: #ea580c;
+    --primary-pale: #ffedd5;
+    --bg: #fff8f0;
+    --card: #ffffff;
+    --text: #3f3226;
+    --text-sub: #8a7a68;
+    --border: #f0e4d5;
+    --hit: #16a34a;
+    --hit-pale: #dcfce7;
+    --fav: #e11d48;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { font-size: 16px; }
+  body {
+    font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  .app { max-width: 640px; margin: 0 auto; min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* ヘッダー */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--primary);
+    color: #fff;
+    padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(249,115,22,.25);
+  }
+  header h1 { font-size: 1.15rem; letter-spacing: .02em; }
+  header h1 .sub { font-size: .7rem; font-weight: normal; opacity: .9; display: block; letter-spacing: 0; }
+  .header-btn {
+    background: rgba(255,255,255,.18);
+    border: 1px solid rgba(255,255,255,.4);
+    color: #fff; border-radius: 20px;
+    padding: 6px 14px; font-size: .85rem; cursor: pointer;
+  }
+  .header-btn:active { background: rgba(255,255,255,.3); }
+
+  main { flex: 1; padding-bottom: 120px; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* カテゴリタブ */
+  .tabs {
+    display: flex; gap: 6px; overflow-x: auto;
+    padding: 12px 16px 4px; scrollbar-width: none;
+    position: sticky; top: 58px; z-index: 10; background: var(--bg);
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex-shrink: 0;
+    border: 1.5px solid var(--border); background: var(--card);
+    color: var(--text-sub);
+    border-radius: 20px; padding: 7px 14px;
+    font-size: .88rem; cursor: pointer; position: relative;
+  }
+  .tab.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: bold; }
+  .tab .badge {
+    display: inline-block; min-width: 18px; height: 18px; line-height: 18px;
+    background: var(--fav); color: #fff; border-radius: 9px;
+    font-size: .7rem; text-align: center; margin-left: 4px; padding: 0 4px;
+  }
+  .tab.active .badge { background: #fff; color: var(--primary); }
+
+  /* 食材チップ */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+  .chip {
+    border: 1.5px solid var(--border); background: var(--card);
+    border-radius: 22px; padding: 9px 15px;
+    font-size: .95rem; color: var(--text); cursor: pointer;
+    transition: transform .05s;
+  }
+  .chip:active { transform: scale(.95); }
+  .chip.selected {
+    background: var(--primary); border-color: var(--primary-dark);
+    color: #fff; font-weight: bold;
+  }
+
+  /* 下部の選択バー */
+  .selected-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+    background: var(--card);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 16px rgba(63,50,38,.08);
+    padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .selected-bar-inner { max-width: 640px; margin: 0 auto; }
+  .selected-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 30px; }
+  .selected-list .empty-note { color: var(--text-sub); font-size: .82rem; padding: 4px 0; }
+  .sel-chip {
+    background: var(--primary-pale); color: var(--primary-dark);
+    border-radius: 16px; padding: 4px 10px; font-size: .85rem;
+    display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+    border: 1px solid #fdba74;
+  }
+  .sel-chip .x { font-weight: bold; }
+  .search-btn {
+    width: 100%; border: none; border-radius: 12px;
+    padding: 13px; font-size: 1.05rem; font-weight: bold;
+    background: var(--primary); color: #fff; cursor: pointer;
+  }
+  .search-btn:disabled { background: #d6c9b8; cursor: default; }
+  .search-btn:not(:disabled):active { background: var(--primary-dark); }
+
+  /* 一覧画面 */
+  .list-head { padding: 14px 16px 0; }
+  .list-head .picked { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 4px; }
+  .list-head .picked .sel-chip { cursor: default; }
+  .section-title { font-size: 1.05rem; font-weight: bold; }
+  .result-count { color: var(--text-sub); font-size: .85rem; margin-top: 2px; }
+
+  .filters { padding: 10px 16px 0; }
+  .filter-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 6px; }
+  .filter-row::-webkit-scrollbar { display: none; }
+  .filter-label { flex-shrink: 0; font-size: .8rem; color: var(--text-sub); align-self: center; margin-right: 2px; }
+  .fchip {
+    flex-shrink: 0; border: 1.5px solid var(--border); background: var(--card);
+    border-radius: 16px; padding: 4px 12px; font-size: .82rem;
+    color: var(--text-sub); cursor: pointer;
+  }
+  .fchip.active { background: var(--primary-pale); border-color: var(--primary); color: var(--primary-dark); font-weight: bold; }
+
+  .cards { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 16px; cursor: pointer;
+    box-shadow: 0 1px 4px rgba(63,50,38,.05);
+  }
+  .card:active { background: #fffbf5; }
+  .card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .card h3 { font-size: 1.02rem; }
+  .match-badge {
+    flex-shrink: 0;
+    background: var(--hit-pale); color: var(--hit);
+    border-radius: 12px; padding: 3px 10px;
+    font-size: .8rem; font-weight: bold; white-space: nowrap;
+  }
+  .card .meta { color: var(--text-sub); font-size: .82rem; margin: 2px 0 8px; }
+  .ing-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+  .ing-tag {
+    font-size: .78rem; border-radius: 12px; padding: 2px 9px;
+    background: #f7f1e8; color: var(--text-sub);
+  }
+  .ing-tag.hit { background: var(--hit-pale); color: var(--hit); font-weight: bold; }
+  .empty-box { text-align: center; color: var(--text-sub); padding: 40px 20px; font-size: .92rem; }
+
+  /* 詳細画面 */
+  .detail { padding: 16px; }
+  .detail-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 20px;
+  }
+  .detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .detail h2 { font-size: 1.25rem; line-height: 1.4; }
+  .fav-btn {
+    flex-shrink: 0; border: 1.5px solid var(--border); background: var(--card);
+    border-radius: 50%; width: 46px; height: 46px;
+    font-size: 1.4rem; cursor: pointer; color: #c9b9a6;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .fav-btn.on { color: var(--fav); border-color: #fda4af; background: #fff1f2; }
+  .detail .meta-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+  .meta-pill {
+    background: var(--primary-pale); color: var(--primary-dark);
+    border-radius: 12px; padding: 3px 11px; font-size: .82rem; font-weight: bold;
+  }
+  .detail h4 {
+    font-size: .95rem; margin: 18px 0 8px;
+    padding-left: 10px; border-left: 4px solid var(--primary);
+  }
+  .other-list { color: var(--text-sub); font-size: .9rem; }
+  .steps { list-style: none; counter-reset: step; }
+  .steps li {
+    counter-increment: step;
+    display: flex; gap: 10px; margin-bottom: 12px; font-size: .95rem;
+  }
+  .steps li::before {
+    content: counter(step);
+    flex-shrink: 0;
+    width: 26px; height: 26px; border-radius: 50%;
+    background: var(--primary); color: #fff;
+    font-size: .85rem; font-weight: bold;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 2px;
+  }
+  .back-row { padding: 14px 16px 0; }
+  .back-btn {
+    border: 1.5px solid var(--border); background: var(--card);
+    border-radius: 20px; padding: 7px 16px; font-size: .88rem;
+    color: var(--text-sub); cursor: pointer;
+  }
+
+  /* トースト */
+  #toast {
+    position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%);
+    background: rgba(63,50,38,.92); color: #fff;
+    border-radius: 20px; padding: 9px 18px; font-size: .88rem;
+    opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 50;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🍳 レシピヘルパー<span class="sub">食材を1〜5つ選んでレシピを探す</span></h1>
+    <button class="header-btn" id="navBtn">♥ お気に入り</button>
+  </header>
+
+  <main>
+    <!-- 画面1: 食材選択 -->
+    <section class="screen active" id="screen-select">
+      <div class="tabs" id="tabs"></div>
+      <div class="chips" id="ingredientChips"></div>
+    </section>
+
+    <!-- 画面2: レシピ一覧 -->
+    <section class="screen" id="screen-results">
+      <div class="back-row"><button class="back-btn" data-goto="screen-select">← 食材を選び直す</button></div>
+      <div class="list-head">
+        <div class="section-title">おすすめレシピ</div>
+        <div class="picked" id="pickedList"></div>
+        <div class="result-count" id="resultCount"></div>
+      </div>
+      <div class="filters">
+        <div class="filter-row" id="timeFilters"></div>
+        <div class="filter-row" id="methodFilters"></div>
+      </div>
+      <div class="cards" id="resultCards"></div>
+    </section>
+
+    <!-- 画面3: レシピ詳細 -->
+    <section class="screen" id="screen-detail">
+      <div class="back-row"><button class="back-btn" id="detailBack">← 戻る</button></div>
+      <div class="detail" id="detailBody"></div>
+    </section>
+
+    <!-- 画面4: お気に入り -->
+    <section class="screen" id="screen-favorites">
+      <div class="back-row"><button class="back-btn" data-goto="screen-select">← 食材選択へ</button></div>
+      <div class="list-head">
+        <div class="section-title">♥ お気に入り</div>
+        <div class="result-count" id="favCount"></div>
+      </div>
+      <div class="cards" id="favCards"></div>
+    </section>
+  </main>
+
+  <!-- 下部固定: 選択中の食材バー(食材選択画面のみ) -->
+  <div class="selected-bar" id="selectedBar">
+    <div class="selected-bar-inner">
+      <div class="selected-list" id="selectedList"></div>
+      <button class="search-btn" id="searchBtn" disabled>食材を選んでください</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<script src="./data/ingredients.js"></script>
+<script src="./data/recipes.js"></script>
+<script>
+"use strict";
+
+// ===== 状態 =====
+const FAV_KEY = "recipe_helper_favorites";
+const CATEGORIES = Object.keys(INGREDIENTS);
+const METHODS = ["焼く", "炒める", "煮る", "蒸す", "揚げる", "和える・生食", "汁物・鍋", "ごはん・麺"];
+const TIME_FILTERS = [
+  { label: "すべて", value: 0 },
+  { label: "10分以内", value: 10 },
+  { label: "15分以内", value: 15 },
+  { label: "30分以内", value: 30 }
+];
+
+let currentCategory = CATEGORIES[0];
+const selected = new Set();
+let favorites = new Set();
+let filterMethod = "すべて";
+let filterTime = 0;
+let detailReturnScreen = "screen-results";
+
+try {
+  favorites = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || "[]"));
+} catch (e) { favorites = new Set(); }
+
+const recipeById = {};
+RECIPES.forEach(r => { recipeById[r.id] = r; });
+
+// ===== ユーティリティ =====
+const $ = id => document.getElementById(id);
+
+function showToast(msg) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => t.classList.remove("show"), 1800);
+}
+
+function showScreen(id) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  $(id).classList.add("active");
+  $("selectedBar").style.display = (id === "screen-select") ? "block" : "none";
+  window.scrollTo(0, 0);
+}
+
+function saveFavorites() {
+  localStorage.setItem(FAV_KEY, JSON.stringify([...favorites]));
+}
+
+// ===== 画面1: 食材選択 =====
+function renderTabs() {
+  const el = $("tabs");
+  el.innerHTML = "";
+  CATEGORIES.forEach(cat => {
+    const btn = document.createElement("button");
+    btn.className = "tab" + (cat === currentCategory ? " active" : "");
+    const count = INGREDIENTS[cat].filter(i => selected.has(i)).length;
+    btn.textContent = cat;
+    if (count > 0) {
+      const b = document.createElement("span");
+      b.className = "badge";
+      b.textContent = count;
+      btn.appendChild(b);
+    }
+    btn.onclick = () => { currentCategory = cat; renderTabs(); renderIngredients(); };
+    el.appendChild(btn);
+  });
+}
+
+function renderIngredients() {
+  const el = $("ingredientChips");
+  el.innerHTML = "";
+  INGREDIENTS[currentCategory].forEach(ing => {
+    const btn = document.createElement("button");
+    btn.className = "chip" + (selected.has(ing) ? " selected" : "");
+    btn.textContent = ing;
+    btn.onclick = () => toggleIngredient(ing);
+    el.appendChild(btn);
+  });
+}
+
+function toggleIngredient(ing) {
+  if (selected.has(ing)) {
+    selected.delete(ing);
+  } else {
+    if (selected.size >= 5) { showToast("選べる食材は5つまでです"); return; }
+    selected.add(ing);
+  }
+  renderTabs();
+  renderIngredients();
+  renderSelectedBar();
+}
+
+function renderSelectedBar() {
+  const list = $("selectedList");
+  list.innerHTML = "";
+  if (selected.size === 0) {
+    const n = document.createElement("span");
+    n.className = "empty-note";
+    n.textContent = "食材をタップして選択(1〜5個)";
+    list.appendChild(n);
+  } else {
+    selected.forEach(ing => {
+      const c = document.createElement("span");
+      c.className = "sel-chip";
+      c.innerHTML = "";
+      c.appendChild(document.createTextNode(ing + " "));
+      const x = document.createElement("span");
+      x.className = "x";
+      x.textContent = "✕";
+      c.appendChild(x);
+      c.onclick = () => toggleIngredient(ing);
+      list.appendChild(c);
+    });
+  }
+  const btn = $("searchBtn");
+  if (selected.size === 0) {
+    btn.disabled = true;
+    btn.textContent = "食材を選んでください";
+  } else {
+    btn.disabled = false;
+    btn.textContent = selected.size === 1
+      ? "この食材でレシピを探す"
+      : `この${selected.size}つでレシピを探す`;
+  }
+}
+
+// ===== 画面2: レシピ一覧 =====
+// searchRecipesは全一致(score>=1)を返す。しきい値判定と補足表示はrenderResultsで行う。
+// 1個選択: 1つ一致で表示 / 2個以上選択: 2つ以上一致を優先し、少なければ1つ一致を補足表示。
+function searchRecipes() {
+  return RECIPES
+    .map(r => ({
+      recipe: r,
+      score: r.main_ingredients.filter(i => selected.has(i)).length
+    }))
+    .filter(x => x.score >= 1)
+    .sort((a, b) => b.score - a.score || a.recipe.time_minutes - b.recipe.time_minutes);
+}
+
+function renderFilters() {
+  const tf = $("timeFilters");
+  tf.innerHTML = "";
+  const tl = document.createElement("span");
+  tl.className = "filter-label";
+  tl.textContent = "時間:";
+  tf.appendChild(tl);
+  TIME_FILTERS.forEach(f => {
+    const b = document.createElement("button");
+    b.className = "fchip" + (filterTime === f.value ? " active" : "");
+    b.textContent = f.label;
+    b.onclick = () => { filterTime = f.value; renderFilters(); renderResults(); };
+    tf.appendChild(b);
+  });
+
+  const mf = $("methodFilters");
+  mf.innerHTML = "";
+  const ml = document.createElement("span");
+  ml.className = "filter-label";
+  ml.textContent = "調理法:";
+  mf.appendChild(ml);
+  ["すべて", ...METHODS].forEach(m => {
+    const b = document.createElement("button");
+    b.className = "fchip" + (filterMethod === m ? " active" : "");
+    b.textContent = m;
+    b.onclick = () => { filterMethod = m; renderFilters(); renderResults(); };
+    mf.appendChild(b);
+  });
+}
+
+function makeRecipeCard(recipe, score, fromScreen) {
+  const card = document.createElement("div");
+  card.className = "card";
+
+  const top = document.createElement("div");
+  top.className = "top";
+  const h = document.createElement("h3");
+  h.textContent = recipe.name;
+  top.appendChild(h);
+  if (score !== null) {
+    const badge = document.createElement("span");
+    badge.className = "match-badge";
+    badge.textContent = `一致 ${score}/${selected.size}`;
+    top.appendChild(badge);
+  } else if (favorites.has(recipe.id)) {
+    const badge = document.createElement("span");
+    badge.className = "match-badge";
+    badge.style.background = "#fff1f2";
+    badge.style.color = "var(--fav)";
+    badge.textContent = "♥";
+    top.appendChild(badge);
+  }
+  card.appendChild(top);
+
+  const meta = document.createElement("div");
+  meta.className = "meta";
+  meta.textContent = `${recipe.genre}|${recipe.method}|約${recipe.time_minutes}分|${recipe.servings}人分`;
+  card.appendChild(meta);
+
+  const tags = document.createElement("div");
+  tags.className = "ing-tags";
+  recipe.main_ingredients.forEach(i => {
+    const t = document.createElement("span");
+    t.className = "ing-tag" + (selected.has(i) && score !== null ? " hit" : "");
+    t.textContent = i;
+    tags.appendChild(t);
+  });
+  card.appendChild(tags);
+
+  card.onclick = () => showDetail(recipe.id, fromScreen);
+  return card;
+}
+
+function renderResults() {
+  const picked = $("pickedList");
+  picked.innerHTML = "";
+  selected.forEach(ing => {
+    const c = document.createElement("span");
+    c.className = "sel-chip";
+    c.textContent = ing;
+    picked.appendChild(c);
+  });
+
+  const minMatch = selected.size >= 2 ? 2 : 1;
+  const applyFilters = list => list.filter(x =>
+    (filterTime === 0 || x.recipe.time_minutes <= filterTime) &&
+    (filterMethod === "すべて" || x.recipe.method === filterMethod)
+  );
+
+  const scored = searchRecipes();
+  const primaryAll = scored.filter(x => x.score >= minMatch);
+  const primary = applyFilters(primaryAll);
+
+  // 2つ以上一致が3件未満のときは、1つ一致のレシピを補足として表示する
+  let secondary = [];
+  if (minMatch === 2 && primary.length < 3) {
+    secondary = applyFilters(scored.filter(x => x.score === 1));
+  }
+
+  $("resultCount").textContent =
+    `${primary.length}件ヒット` +
+    (primary.length !== primaryAll.length ? `(絞り込み前: ${primaryAll.length}件)` : "");
+
+  const box = $("resultCards");
+  box.innerHTML = "";
+
+  if (primary.length === 0 && secondary.length === 0) {
+    const e = document.createElement("div");
+    e.className = "empty-box";
+    e.textContent = primaryAll.length === 0
+      ? "一致するレシピが見つかりませんでした。食材の組み合わせを変えてみてください。"
+      : "絞り込み条件に合うレシピがありません。フィルタを緩めてみてください。";
+    box.appendChild(e);
+    return;
+  }
+
+  primary.forEach(x => box.appendChild(makeRecipeCard(x.recipe, x.score, "screen-results")));
+
+  if (secondary.length > 0) {
+    const note = document.createElement("div");
+    note.className = "result-count";
+    note.style.padding = "6px 2px 0";
+    note.textContent = primary.length === 0
+      ? "2つ以上一致するレシピがなかったため、1つ一致のレシピを表示しています"
+      : "2つ以上一致するレシピが少ないため、1つ一致のレシピも表示しています";
+    box.appendChild(note);
+    secondary.forEach(x => box.appendChild(makeRecipeCard(x.recipe, x.score, "screen-results")));
+  }
+}
+
+// ===== 画面3: レシピ詳細 =====
+function showDetail(id, fromScreen) {
+  const r = recipeById[id];
+  if (!r) return;
+  detailReturnScreen = fromScreen || "screen-results";
+
+  const body = $("detailBody");
+  body.innerHTML = "";
+
+  const card = document.createElement("div");
+  card.className = "detail-card";
+
+  const head = document.createElement("div");
+  head.className = "detail-head";
+  const h2 = document.createElement("h2");
+  h2.textContent = r.name;
+  head.appendChild(h2);
+  const fav = document.createElement("button");
+  fav.className = "fav-btn" + (favorites.has(id) ? " on" : "");
+  fav.textContent = favorites.has(id) ? "♥" : "♡";
+  fav.setAttribute("aria-label", "お気に入り");
+  fav.onclick = () => {
+    if (favorites.has(id)) {
+      favorites.delete(id);
+      showToast("お気に入りから外しました");
+    } else {
+      favorites.add(id);
+      showToast("お気に入りに追加しました");
+    }
+    saveFavorites();
+    fav.className = "fav-btn" + (favorites.has(id) ? " on" : "");
+    fav.textContent = favorites.has(id) ? "♥" : "♡";
+  };
+  head.appendChild(fav);
+  card.appendChild(head);
+
+  const metaRow = document.createElement("div");
+  metaRow.className = "meta-row";
+  [r.genre, r.method, `約${r.time_minutes}分`, `${r.servings}人分`].forEach(m => {
+    const p = document.createElement("span");
+    p.className = "meta-pill";
+    p.textContent = m;
+    metaRow.appendChild(p);
+  });
+  card.appendChild(metaRow);
+
+  const h4a = document.createElement("h4");
+  h4a.textContent = "主要食材";
+  card.appendChild(h4a);
+  const tags = document.createElement("div");
+  tags.className = "ing-tags";
+  r.main_ingredients.forEach(i => {
+    const t = document.createElement("span");
+    t.className = "ing-tag" + (selected.has(i) ? " hit" : "");
+    t.style.fontSize = ".88rem";
+    t.textContent = i;
+    tags.appendChild(t);
+  });
+  card.appendChild(tags);
+
+  const h4b = document.createElement("h4");
+  h4b.textContent = "その他の材料・調味料";
+  card.appendChild(h4b);
+  const other = document.createElement("div");
+  other.className = "other-list";
+  other.textContent = r.other_ingredients.join("、");
+  card.appendChild(other);
+
+  const h4c = document.createElement("h4");
+  h4c.textContent = "作り方";
+  card.appendChild(h4c);
+  const ol = document.createElement("ol");
+  ol.className = "steps";
+  r.steps.forEach(s => {
+    const li = document.createElement("li");
+    li.textContent = s;
+    ol.appendChild(li);
+  });
+  card.appendChild(ol);
+
+  body.appendChild(card);
+  showScreen("screen-detail");
+}
+
+// ===== 画面4: お気に入り =====
+function renderFavorites() {
+  const box = $("favCards");
+  box.innerHTML = "";
+  const favRecipes = RECIPES.filter(r => favorites.has(r.id));
+  $("favCount").textContent = `${favRecipes.length}件`;
+  if (favRecipes.length === 0) {
+    const e = document.createElement("div");
+    e.className = "empty-box";
+    e.textContent = "お気に入りはまだありません。レシピ詳細の ♡ から登録できます。";
+    box.appendChild(e);
+    return;
+  }
+  favRecipes.forEach(r => box.appendChild(makeRecipeCard(r, null, "screen-favorites")));
+}
+
+// ===== イベント =====
+$("searchBtn").onclick = () => {
+  if (selected.size < 1) return;
+  filterMethod = "すべて";
+  filterTime = 0;
+  renderFilters();
+  renderResults();
+  showScreen("screen-results");
+};
+
+$("navBtn").onclick = () => { renderFavorites(); showScreen("screen-favorites"); };
+
+$("detailBack").onclick = () => {
+  if (detailReturnScreen === "screen-favorites") renderFavorites();
+  else renderResults();
+  showScreen(detailReturnScreen);
+};
+
+document.querySelectorAll("[data-goto]").forEach(btn => {
+  btn.onclick = () => showScreen(btn.dataset.goto);
+});
+
+// ===== 初期化 =====
+renderTabs();
+renderIngredients();
+renderSelectedBar();
+
+// Service Worker登録(http/httpsのみ。file://直開きでも本体は動作する)
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
