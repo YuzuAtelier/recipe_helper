@@ -58,27 +58,30 @@
   .screen { display: none; }
   .screen.active { display: block; }
 
-  /* カテゴリタブ */
+  /* カテゴリタブ(下線タブバー) */
   .tabs {
-    display: flex; gap: 6px; overflow-x: auto;
-    padding: 12px 16px 4px; scrollbar-width: none;
+    display: flex; gap: 2px; overflow-x: auto;
+    padding: 8px 12px 0; scrollbar-width: none;
     position: sticky; top: 58px; z-index: 10; background: var(--bg);
+    border-bottom: 2px solid var(--border);
   }
   .tabs::-webkit-scrollbar { display: none; }
   .tab {
     flex-shrink: 0;
-    border: 1.5px solid var(--border); background: var(--card);
+    border: none; background: transparent;
     color: var(--text-sub);
-    border-radius: 20px; padding: 7px 14px;
-    font-size: .88rem; cursor: pointer; position: relative;
+    padding: 9px 12px; margin-bottom: -2px;
+    font-size: .9rem; cursor: pointer; position: relative;
+    border-bottom: 3px solid transparent;
+    display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
   }
-  .tab.active { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: bold; }
+  .tab .tab-emoji { font-size: 1.05rem; }
+  .tab.active { color: var(--primary-dark); font-weight: bold; border-bottom-color: var(--primary); }
   .tab .badge {
     display: inline-block; min-width: 18px; height: 18px; line-height: 18px;
     background: var(--fav); color: #fff; border-radius: 9px;
-    font-size: .7rem; text-align: center; margin-left: 4px; padding: 0 4px;
+    font-size: .7rem; text-align: center; margin-left: 2px; padding: 0 4px;
   }
-  .tab.active .badge { background: #fff; color: var(--primary); }
 
   /* 食材チップ */
   .chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
@@ -103,6 +106,17 @@
     padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
   }
   .selected-bar-inner { max-width: 640px; margin: 0 auto; }
+  .selected-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px; min-height: 22px;
+  }
+  .selected-head-label { font-size: .78rem; color: var(--text-sub); font-weight: bold; }
+  .clear-btn {
+    border: none; background: transparent; color: var(--fav);
+    font-size: .8rem; cursor: pointer; padding: 2px 4px;
+    text-decoration: underline; display: none;
+  }
+  .clear-btn.show { display: inline-block; }
   .selected-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 30px; }
   .selected-list .empty-note { color: var(--text-sub); font-size: .82rem; padding: 4px 0; }
   .sel-chip {
@@ -128,8 +142,7 @@
   .result-count { color: var(--text-sub); font-size: .85rem; margin-top: 2px; }
 
   .filters { padding: 10px 16px 0; }
-  .filter-row { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 6px; }
-  .filter-row::-webkit-scrollbar { display: none; }
+  .filter-row { display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 6px; }
   .filter-label { flex-shrink: 0; font-size: .8rem; color: var(--text-sub); align-self: center; margin-right: 2px; }
   .fchip {
     flex-shrink: 0; border: 1.5px solid var(--border); background: var(--card);
@@ -268,6 +281,10 @@
   <!-- 下部固定: 選択中の食材バー(食材選択画面のみ) -->
   <div class="selected-bar" id="selectedBar">
     <div class="selected-bar-inner">
+      <div class="selected-head">
+        <span class="selected-head-label">選択中の食材</span>
+        <button class="clear-btn" id="clearBtn">すべてクリア</button>
+      </div>
       <div class="selected-list" id="selectedList"></div>
       <button class="search-btn" id="searchBtn" disabled>食材を選んでください</button>
     </div>
@@ -284,6 +301,7 @@
 // ===== 状態 =====
 const FAV_KEY = "recipe_helper_favorites";
 const CATEGORIES = Object.keys(INGREDIENTS);
+const CATEGORY_EMOJI = { "野菜": "🥬", "肉・魚": "🍖", "乳製品": "🥚", "加工食品": "🥫", "主食・粉類": "🍚" };
 const METHODS = ["焼く", "炒める", "煮る", "蒸す", "揚げる", "和える・生食", "汁物・鍋", "ごはん・麺"];
 const TIME_FILTERS = [
   { label: "すべて", value: 0 },
@@ -336,7 +354,11 @@ function renderTabs() {
     const btn = document.createElement("button");
     btn.className = "tab" + (cat === currentCategory ? " active" : "");
     const count = INGREDIENTS[cat].filter(i => selected.has(i)).length;
-    btn.textContent = cat;
+    const emoji = document.createElement("span");
+    emoji.className = "tab-emoji";
+    emoji.textContent = CATEGORY_EMOJI[cat] || "";
+    btn.appendChild(emoji);
+    btn.appendChild(document.createTextNode(cat));
     if (count > 0) {
       const b = document.createElement("span");
       b.className = "badge";
@@ -375,6 +397,7 @@ function toggleIngredient(ing) {
 function renderSelectedBar() {
   const list = $("selectedList");
   list.innerHTML = "";
+  $("clearBtn").classList.toggle("show", selected.size > 0);
   if (selected.size === 0) {
     const n = document.createElement("span");
     n.className = "empty-note";
@@ -657,6 +680,15 @@ $("searchBtn").onclick = () => {
   renderFilters();
   renderResults();
   showScreen("screen-results");
+};
+
+$("clearBtn").onclick = () => {
+  if (selected.size === 0) return;
+  selected.clear();
+  renderTabs();
+  renderIngredients();
+  renderSelectedBar();
+  showToast("選択をすべて解除しました");
 };
 
 $("navBtn").onclick = () => { renderFavorites(); showScreen("screen-favorites"); };
