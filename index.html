@@ -58,6 +58,29 @@
   .screen { display: none; }
   .screen.active { display: block; }
 
+  /* キーワード検索窓 */
+  .keyword-bar {
+    display: flex; align-items: center; gap: 8px;
+    margin: 12px 16px 0; padding: 8px 12px;
+    background: var(--card); border: 1.5px solid var(--border);
+    border-radius: 24px;
+  }
+  .keyword-bar:focus-within { border-color: var(--primary); }
+  .keyword-icon { font-size: .95rem; opacity: .7; cursor: pointer; }
+  .keyword-input {
+    flex: 1; border: none; outline: none; background: transparent;
+    font-size: .95rem; color: var(--text); font-family: inherit;
+    min-width: 0;
+  }
+  .keyword-input::placeholder { color: var(--text-sub); }
+  .keyword-clear {
+    border: none; background: var(--border); color: var(--text-sub);
+    width: 20px; height: 20px; border-radius: 50%;
+    font-size: .7rem; cursor: pointer; flex-shrink: 0;
+    display: none; align-items: center; justify-content: center; line-height: 1;
+  }
+  .keyword-clear.show { display: inline-flex; }
+
   /* カテゴリタブ(下線タブバー) */
   .tabs {
     display: flex; gap: 2px; overflow-x: auto;
@@ -242,6 +265,12 @@
   <main>
     <!-- 画面1: 食材選択 -->
     <section class="screen active" id="screen-select">
+      <div class="keyword-bar">
+        <span class="keyword-icon">🔍</span>
+        <input type="search" id="keywordInput" class="keyword-input"
+          placeholder="レシピ名・食材で検索(例: スープ)" autocomplete="off" enterkeyhint="search">
+        <button class="keyword-clear" id="keywordClear" aria-label="クリア">✕</button>
+      </div>
       <div class="tabs" id="tabs"></div>
       <div class="chips" id="ingredientChips"></div>
     </section>
@@ -250,7 +279,7 @@
     <section class="screen" id="screen-results">
       <div class="back-row"><button class="back-btn" data-goto="screen-select">← 食材を選び直す</button></div>
       <div class="list-head">
-        <div class="section-title">おすすめレシピ</div>
+        <div class="section-title" id="resultsTitle">おすすめレシピ</div>
         <div class="picked" id="pickedList"></div>
         <div class="result-count" id="resultCount"></div>
       </div>
@@ -316,6 +345,8 @@ let favorites = new Set();
 let filterMethod = "すべて";
 let filterTime = 0;
 let detailReturnScreen = "screen-results";
+let searchMode = "ingredient"; // "ingredient" | "keyword"
+let keyword = "";
 
 try {
   favorites = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || "[]"));
@@ -515,7 +546,26 @@ function makeRecipeCard(recipe, score, fromScreen) {
   return card;
 }
 
+// 検索用の正規化: 小文字化 + カタカナをひらがなに揃える(かな種の違いを吸収)
+function normalizeForSearch(s) {
+  return s.toLowerCase().replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+}
+
+// キーワードがレシピ名・主要食材・ジャンル・調理法に含まれるか
+// (調味料=other_ingredientsは「鶏がらスープ」等の誤ヒットを招くため対象外)
+function matchesKeyword(recipe, kw) {
+  if (!kw) return false;
+  const hay = normalizeForSearch([
+    recipe.name, recipe.genre, recipe.method,
+    ...recipe.main_ingredients
+  ].join(" "));
+  return normalizeForSearch(kw).split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+}
+
 function renderResults() {
+  if (searchMode === "keyword") { renderKeywordResults(); return; }
+
+  $("resultsTitle").textContent = "おすすめレシピ";
   const picked = $("pickedList");
   picked.innerHTML = "";
   selected.forEach(ing => {
@@ -570,6 +620,38 @@ function renderResults() {
     box.appendChild(note);
     secondary.forEach(x => box.appendChild(makeRecipeCard(x.recipe, x.score, "screen-results")));
   }
+}
+
+// キーワード検索の結果表示
+function renderKeywordResults() {
+  $("resultsTitle").textContent = "🔍 キーワード検索";
+  const picked = $("pickedList");
+  picked.innerHTML = "";
+  const kwChip = document.createElement("span");
+  kwChip.className = "sel-chip";
+  kwChip.textContent = `「${keyword}」`;
+  picked.appendChild(kwChip);
+
+  let hits = RECIPES.filter(r => matchesKeyword(r, keyword));
+  const total = hits.length;
+  if (filterTime > 0) hits = hits.filter(r => r.time_minutes <= filterTime);
+  if (filterMethod !== "すべて") hits = hits.filter(r => r.method === filterMethod);
+
+  $("resultCount").textContent =
+    `${hits.length}件ヒット` + (hits.length !== total ? `(絞り込み前: ${total}件)` : "");
+
+  const box = $("resultCards");
+  box.innerHTML = "";
+  if (hits.length === 0) {
+    const e = document.createElement("div");
+    e.className = "empty-box";
+    e.textContent = total === 0
+      ? `「${keyword}」に一致するレシピが見つかりませんでした。別のキーワードをお試しください。`
+      : "絞り込み条件に合うレシピがありません。フィルタを緩めてみてください。";
+    box.appendChild(e);
+    return;
+  }
+  hits.forEach(r => box.appendChild(makeRecipeCard(r, null, "screen-results")));
 }
 
 // ===== 画面3: レシピ詳細 =====
@@ -675,12 +757,38 @@ function renderFavorites() {
 // ===== イベント =====
 $("searchBtn").onclick = () => {
   if (selected.size < 1) return;
+  searchMode = "ingredient";
   filterMethod = "すべて";
   filterTime = 0;
   renderFilters();
   renderResults();
   showScreen("screen-results");
 };
+
+// キーワード検索
+function runKeywordSearch() {
+  const kw = $("keywordInput").value.trim();
+  if (!kw) { showToast("キーワードを入力してください"); return; }
+  keyword = kw;
+  searchMode = "keyword";
+  filterMethod = "すべて";
+  filterTime = 0;
+  renderFilters();
+  renderResults();
+  showScreen("screen-results");
+}
+$("keywordInput").addEventListener("input", () => {
+  $("keywordClear").classList.toggle("show", $("keywordInput").value.length > 0);
+});
+$("keywordInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); $("keywordInput").blur(); runKeywordSearch(); }
+});
+$("keywordClear").onclick = () => {
+  $("keywordInput").value = "";
+  $("keywordClear").classList.remove("show");
+  $("keywordInput").focus();
+};
+document.querySelector(".keyword-icon").onclick = runKeywordSearch;
 
 $("clearBtn").onclick = () => {
   if (selected.size === 0) return;

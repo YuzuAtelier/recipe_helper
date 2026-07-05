@@ -1,6 +1,6 @@
 // Service Worker — レシピヘルパー
 // キャッシュ優先(完全オフライン動作)。データ更新時は CACHE_VERSION を上げること。
-const CACHE_VERSION = "recipe-helper-v2";
+const CACHE_VERSION = "recipe-helper-v3";
 const ASSETS = [
   "./",
   "./index.html",
