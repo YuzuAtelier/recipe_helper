@@ -53,6 +53,7 @@
     padding: 6px 14px; font-size: .85rem; cursor: pointer;
   }
   .header-btn:active { background: rgba(255,255,255,.3); }
+  .header-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
   main { flex: 1; padding-bottom: 120px; }
   .screen { display: none; }
@@ -244,6 +245,42 @@
     color: var(--text-sub); cursor: pointer;
   }
 
+  /* ヒント画面 */
+  .tips { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .tip-cat {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden;
+  }
+  .tip-cat-head {
+    width: 100%; border: none; background: transparent;
+    padding: 14px 16px; font-size: 1rem; font-weight: bold;
+    color: var(--text); cursor: pointer; font-family: inherit;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    text-align: left;
+  }
+  .tip-cat-head .tip-count {
+    font-size: .75rem; font-weight: normal; color: var(--text-sub);
+    margin-left: auto;
+  }
+  .tip-cat-head .arrow { color: var(--text-sub); transition: transform .2s; font-size: .8rem; }
+  .tip-cat.open .arrow { transform: rotate(90deg); }
+  .tip-cat-body { display: none; border-top: 1px solid var(--border); }
+  .tip-cat.open .tip-cat-body { display: block; }
+  .tip-item { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .tip-item:last-child { border-bottom: none; }
+  .tip-name { font-weight: bold; margin-bottom: 4px; font-size: .95rem; }
+  .tip-row { display: flex; gap: 8px; font-size: .88rem; margin: 3px 0; align-items: flex-start; }
+  .tip-row .lbl {
+    flex-shrink: 0; background: var(--primary-pale); color: var(--primary-dark);
+    border-radius: 10px; padding: 1px 9px; font-size: .75rem; margin-top: 1px;
+    white-space: nowrap;
+  }
+  .tip-point { font-size: .8rem; color: var(--text-sub); margin-top: 5px; }
+  /* 検索結果内のヒントカード */
+  .tip-card { cursor: default; background: #fffdf2; border-color: #f0e2b8; }
+  .tip-card:active { background: #fffdf2; }
+  .tip-card .tip-item { padding: 0; border: none; }
+
   /* トースト */
   #toast {
     position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%);
@@ -259,7 +296,10 @@
 <div class="app">
   <header>
     <h1>🍳 レシピヘルパー<span class="sub">食材を1〜5つ選んでレシピを探す</span></h1>
-    <button class="header-btn" id="navBtn">♥ お気に入り</button>
+    <div class="header-actions">
+      <button class="header-btn" id="tipsBtn">💡 ヒント</button>
+      <button class="header-btn" id="navBtn">♥ お気に入り</button>
+    </div>
   </header>
 
   <main>
@@ -305,6 +345,16 @@
       </div>
       <div class="cards" id="favCards"></div>
     </section>
+
+    <!-- 画面5: 料理のヒント -->
+    <section class="screen" id="screen-tips">
+      <div class="back-row"><button class="back-btn" data-goto="screen-select">← 食材選択へ</button></div>
+      <div class="list-head">
+        <div class="section-title">💡 料理のヒント</div>
+        <div class="result-count">調理中にサッと引ける早見表(検索窓からも引けます)</div>
+      </div>
+      <div class="tips" id="tipsBody"></div>
+    </section>
   </main>
 
   <!-- 下部固定: 選択中の食材バー(食材選択画面のみ) -->
@@ -324,6 +374,7 @@
 
 <script src="./data/ingredients.js"></script>
 <script src="./data/recipes.js"></script>
+<script src="./data/tips.js"></script>
 <script>
 "use strict";
 
@@ -637,19 +688,61 @@ function renderKeywordResults() {
   if (filterTime > 0) hits = hits.filter(r => r.time_minutes <= filterTime);
   if (filterMethod !== "すべて") hits = hits.filter(r => r.method === filterMethod);
 
+  // 料理のヒントも横断検索(名前・keywords・カテゴリ名が対象)
+  const kwWords = normalizeForSearch(keyword).split(/\s+/).filter(Boolean);
+  const tipHits = [];
+  TIPS.forEach(cat => cat.items.forEach(item => {
+    const hay = normalizeForSearch([item.name, cat.category, ...(item.keywords || [])].join(" "));
+    if (kwWords.every(w => hay.includes(w))) tipHits.push({ cat, item });
+  }));
+
   $("resultCount").textContent =
-    `${hits.length}件ヒット` + (hits.length !== total ? `(絞り込み前: ${total}件)` : "");
+    `レシピ${hits.length}件` +
+    (hits.length !== total ? `(絞り込み前: ${total}件)` : "") +
+    (tipHits.length ? `・ヒント${tipHits.length}件` : "");
 
   const box = $("resultCards");
   box.innerHTML = "";
+
+  // ヒントは先頭に表示(答えがその場で読める)
+  if (tipHits.length > 0) {
+    const h = document.createElement("div");
+    h.className = "result-count";
+    h.style.padding = "0 2px 2px";
+    h.textContent = "💡 料理のヒント";
+    box.appendChild(h);
+    tipHits.forEach(({ cat, item }) => {
+      const card = document.createElement("div");
+      card.className = "card tip-card";
+      card.appendChild(makeTipItem(item, cat));
+      box.appendChild(card);
+    });
+  }
+
   if (hits.length === 0) {
-    const e = document.createElement("div");
-    e.className = "empty-box";
-    e.textContent = total === 0
-      ? `「${keyword}」に一致するレシピが見つかりませんでした。別のキーワードをお試しください。`
-      : "絞り込み条件に合うレシピがありません。フィルタを緩めてみてください。";
-    box.appendChild(e);
+    if (tipHits.length === 0) {
+      const e = document.createElement("div");
+      e.className = "empty-box";
+      e.textContent = total === 0
+        ? `「${keyword}」に一致するレシピが見つかりませんでした。別のキーワードをお試しください。`
+        : "絞り込み条件に合うレシピがありません。フィルタを緩めてみてください。";
+      box.appendChild(e);
+    } else {
+      const n = document.createElement("div");
+      n.className = "result-count";
+      n.style.padding = "6px 2px 0";
+      n.textContent = "該当するレシピはありませんでした";
+      box.appendChild(n);
+    }
     return;
+  }
+
+  if (tipHits.length > 0) {
+    const h2 = document.createElement("div");
+    h2.className = "result-count";
+    h2.style.padding = "6px 2px 2px";
+    h2.textContent = "🍳 レシピ";
+    box.appendChild(h2);
   }
   hits.forEach(r => box.appendChild(makeRecipeCard(r, null, "screen-results")));
 }
@@ -754,6 +847,57 @@ function renderFavorites() {
   favRecipes.forEach(r => box.appendChild(makeRecipeCard(r, null, "screen-favorites")));
 }
 
+// ===== 画面5: 料理のヒント =====
+function makeTipItem(item, cat) {
+  const d = document.createElement("div");
+  d.className = "tip-item";
+  const nm = document.createElement("div");
+  nm.className = "tip-name";
+  nm.textContent = (cat ? cat.emoji + " " : "") + item.name;
+  d.appendChild(nm);
+  (item.detail || []).forEach(([label, value]) => {
+    const row = document.createElement("div");
+    row.className = "tip-row";
+    const l = document.createElement("span"); l.className = "lbl"; l.textContent = label;
+    const v = document.createElement("span"); v.textContent = value;
+    row.append(l, v);
+    d.appendChild(row);
+  });
+  if (item.point) {
+    const p = document.createElement("div");
+    p.className = "tip-point";
+    p.textContent = "💡 " + item.point;
+    d.appendChild(p);
+  }
+  return d;
+}
+
+function renderTips() {
+  const box = $("tipsBody");
+  box.innerHTML = "";
+  TIPS.forEach((cat, idx) => {
+    const sec = document.createElement("div");
+    sec.className = "tip-cat" + (idx === 0 ? " open" : "");
+    const head = document.createElement("button");
+    head.className = "tip-cat-head";
+    const title = document.createElement("span");
+    title.textContent = `${cat.emoji} ${cat.category}`;
+    const count = document.createElement("span");
+    count.className = "tip-count";
+    count.textContent = `${cat.items.length}件`;
+    const arrow = document.createElement("span");
+    arrow.className = "arrow";
+    arrow.textContent = "▶";
+    head.append(title, count, arrow);
+    head.onclick = () => sec.classList.toggle("open");
+    const body = document.createElement("div");
+    body.className = "tip-cat-body";
+    cat.items.forEach(item => body.appendChild(makeTipItem(item)));
+    sec.append(head, body);
+    box.appendChild(sec);
+  });
+}
+
 // ===== イベント =====
 $("searchBtn").onclick = () => {
   if (selected.size < 1) return;
@@ -800,6 +944,8 @@ $("clearBtn").onclick = () => {
 };
 
 $("navBtn").onclick = () => { renderFavorites(); showScreen("screen-favorites"); };
+
+$("tipsBtn").onclick = () => { renderTips(); showScreen("screen-tips"); };
 
 $("detailBack").onclick = () => {
   if (detailReturnScreen === "screen-favorites") renderFavorites();
